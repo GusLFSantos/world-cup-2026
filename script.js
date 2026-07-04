@@ -55,6 +55,7 @@
     Haiti: 83, "New Zealand": 85,
   };
   const RANK_DOMAIN = [1, 40];
+  const BRASILIA_TZ = "America/Sao_Paulo";
 
   // Built-in snapshot so the page still has real data to show when opened
   // straight from disk (file://) or the live fetch can't be reached —
@@ -113,6 +114,8 @@
       { team1: { name: "USA", code: "us" }, team2: { name: "Belgium", code: "be" } },
       { team1: { name: "Argentina", code: "ar" }, team2: { name: "Egypt", code: "eg" } },
     ],
+    // Built-in snapshot has no live match schedule to check "today" against.
+    todayMatches: [],
   };
 
   const svg = document.getElementById("bracket-svg");
@@ -120,9 +123,9 @@
   const linesGroup = document.getElementById("lines-group");
   const nodesEl = document.getElementById("nodes");
   const statusEl = document.getElementById("status");
-  const championEl = document.getElementById("champion-label");
   const trophyBtn = document.getElementById("trophy-btn");
   const rankChartEl = document.getElementById("rank-chart");
+  const todayMatchesEl = document.getElementById("today-matches");
 
   function ordinal(n) {
     const rem100 = n % 100;
@@ -214,6 +217,54 @@
 
   function countryCode(name) {
     return COUNTRY_CODES[name] || name.slice(0, 2).toLowerCase();
+  }
+
+  // openfootball's "time" field is a fixed local kickoff offset, e.g.
+  // "17:00 UTC-4" — no daylight-saving lookup needed, just arithmetic.
+  function matchKickoffUTC(date, time) {
+    const m = /^(\d{2}):(\d{2})\s+UTC([+-]\d+)$/.exec(time || "");
+    if (!m) return null;
+    const [, hh, mm, offset] = m;
+    const [y, mo, d] = date.split("-").map(Number);
+    return new Date(Date.UTC(y, mo - 1, d, Number(hh) - Number(offset), Number(mm)));
+  }
+
+  // Brazil has used a fixed UTC-3 offset (no DST) since 2019, but relying on
+  // the IANA "America/Sao_Paulo" zone rather than hardcoding -3 keeps this
+  // correct if that ever changes.
+  function brasiliaDateString(utcDate) {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: BRASILIA_TZ }).format(utcDate);
+  }
+
+  function brasiliaTimeString(utcDate) {
+    return new Intl.DateTimeFormat("en-GB", {
+      timeZone: BRASILIA_TZ,
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(utcDate);
+  }
+
+  // Matches whose kickoff (converted to Brasília's calendar day) falls on
+  // Brasília's "today" — not just a raw string match on the file's own
+  // `date`, since that date is local to wherever the match is played.
+  // `kickoff` is stored as an ISO string (not a Date) so it survives a round
+  // trip through localStorage/JSON unchanged.
+  function computeTodayMatches(rawMatches) {
+    const todayBrasilia = brasiliaDateString(new Date());
+    return (rawMatches || [])
+      .map((m) => {
+        const kickoff = matchKickoffUTC(m.date, m.time);
+        if (!kickoff || brasiliaDateString(kickoff) !== todayBrasilia) return null;
+        return {
+          team1: { name: m.team1, code: countryCode(m.team1) },
+          team2: { name: m.team2, code: countryCode(m.team2) },
+          ground: m.ground,
+          kickoff: kickoff.toISOString(),
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => (a.kickoff < b.kickoff ? -1 : a.kickoff > b.kickoff ? 1 : 0));
   }
 
   // A match is only decided once its score is no longer tied — penalties
@@ -319,6 +370,7 @@
         final: [winnerSide(FINAL_MATCH_NUM)],
       },
       nextMatches,
+      todayMatches: computeTodayMatches(json.matches),
     };
   }
 
@@ -387,17 +439,6 @@
         nodesEl.appendChild(el);
       });
     });
-
-    championEl.innerHTML = "";
-    if (bracket.champion) {
-      const champImg = document.createElement("img");
-      champImg.src = flagUrl(bracket.champion.code, false);
-      champImg.alt = bracket.champion.name;
-      championEl.appendChild(champImg);
-      championEl.append(`2026 Champion: ${bracket.champion.name}`);
-    } else {
-      championEl.append("Champion: to be decided");
-    }
   }
 
   function setStatus(text) {
@@ -516,6 +557,53 @@
     });
   }
 
+  // Renders the day's fixtures as a row of side-by-side cards — each with
+  // both teams' flags, the host city, and the kickoff time converted to
+  // Brasília local time.
+  function renderTodayMatches(matches) {
+    todayMatchesEl.innerHTML = "";
+
+    if (!matches || matches.length === 0) {
+      const empty = document.createElement("p");
+      empty.className = "today-matches-empty";
+      empty.textContent = "No matches scheduled today.";
+      todayMatchesEl.appendChild(empty);
+      return;
+    }
+
+    matches.forEach((match, i) => {
+      const card = document.createElement("div");
+      card.className = "today-match-card";
+      card.style.setProperty("--delay", `${i * 0.12}s`);
+
+      const teams = document.createElement("div");
+      teams.className = "today-match-teams";
+
+      [match.team1, match.team2].forEach((team, idx) => {
+        if (idx === 1) {
+          const vs = document.createElement("span");
+          vs.className = "today-match-vs";
+          vs.textContent = "vs";
+          teams.appendChild(vs);
+        }
+        const img = document.createElement("img");
+        img.src = flagUrl(team.code, false);
+        img.srcset = `${flagUrl(team.code, true)} 2x`;
+        img.alt = team.name;
+        img.title = team.name;
+        img.loading = "lazy";
+        teams.appendChild(img);
+      });
+
+      const meta = document.createElement("p");
+      meta.className = "today-match-meta";
+      meta.textContent = `${match.ground} — ${brasiliaTimeString(new Date(match.kickoff))}`;
+
+      card.append(teams, meta);
+      todayMatchesEl.appendChild(card);
+    });
+  }
+
   function loadSavedStandings() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -538,6 +626,7 @@
     render(bracket);
     setStatus(statusText);
     renderNextMatches(data.nextMatches);
+    renderTodayMatches(data.todayMatches);
   }
 
   // Downloads the current openfootball/worldcup.json match data straight from
