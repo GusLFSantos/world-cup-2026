@@ -1,0 +1,507 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  height: 100%;
+}
+
+html {
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  background: #0c0c0c;
+  color: #e9edf5;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+/* Fixed to the viewport (not the document) so the glow stays put as one
+   continuous backdrop while scrolling between sections, instead of each
+   section's background being sized/rendered independently. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: radial-gradient(circle at 50% 35%, #2b2b2b 0%, #1a1a1a 60%, #0c0c0c 100%);
+}
+
+.section {
+  min-height: 100vh;
+  box-sizing: border-box;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 32px 16px 48px;
+}
+
+.page-header {
+  text-align: center;
+}
+
+.page-header h1 {
+  margin: 0 0 6px;
+  font-size: clamp(22px, 4vw, 34px);
+  letter-spacing: 1px;
+  background: linear-gradient(90deg, #ffd700, #fff3b0, #ffd700);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.status {
+  margin: 0;
+  font-size: 14px;
+  color: #9aa4b8;
+  min-height: 18px;
+}
+
+.stage {
+  position: relative;
+  width: min(92vw, 900px);
+  aspect-ratio: 1 / 1;
+}
+
+#bracket-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.ring-guide {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.07);
+  stroke-width: 0.12;
+}
+
+.bracket-line {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 0.18;
+  stroke-linecap: round;
+  stroke-dasharray: var(--len);
+  animation-name: draw-line;
+  animation-duration: 0.6s;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+  animation-delay: var(--delay, 0s);
+}
+
+.bracket-line.advanced {
+  stroke: url(#rgbGrad);
+  stroke-width: 0.3;
+  animation-name: draw-line, hue-cycle;
+  animation-duration: 0.6s, 3.5s;
+  animation-timing-function: ease-out, linear;
+  animation-fill-mode: forwards, none;
+  animation-delay: var(--delay, 0s), calc(var(--delay, 0s) + 0.6s);
+  animation-iteration-count: 1, infinite;
+}
+
+.bracket-line.pending {
+  stroke: rgba(255, 255, 255, 0.1);
+  stroke-dasharray: 1.2, 1.2;
+  animation-name: pending-pulse;
+  animation-duration: 2.2s;
+  animation-timing-function: ease-in-out;
+  animation-delay: var(--delay, 0s);
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+
+@keyframes draw-line {
+  from { stroke-dashoffset: var(--len); }
+  to   { stroke-dashoffset: 0; }
+}
+
+@keyframes hue-cycle {
+  from { filter: hue-rotate(0deg) drop-shadow(0 0 1.2px rgba(255, 255, 255, 0.6)); }
+  to   { filter: hue-rotate(360deg) drop-shadow(0 0 1.2px rgba(255, 255, 255, 0.6)); }
+}
+
+@keyframes pending-pulse {
+  from { opacity: 0.35; }
+  to   { opacity: 0.9; }
+}
+
+.nodes {
+  position: absolute;
+  inset: 0;
+}
+
+.flag-node {
+  position: absolute;
+  transform: translate(-50%, -50%) scale(0.4);
+  opacity: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  animation: node-fade 0.5s ease-out forwards;
+  animation-delay: var(--delay, 0s);
+}
+
+@keyframes node-fade {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0.4); }
+  to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+}
+
+.flag-node img {
+  border-radius: 50%;
+  object-fit: cover;
+  background: #111;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25), 0 0 10px rgba(0, 0, 0, 0.6);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.flag-node:hover img {
+  transform: scale(1.12);
+  box-shadow: 0 0 0 2px #ffd700, 0 0 14px rgba(255, 215, 0, 0.6);
+}
+
+.flag-node.eliminated img {
+  filter: grayscale(1) brightness(0.55);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+}
+
+.flag-node.eliminated:hover img {
+  filter: grayscale(0.7) brightness(0.75);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.3);
+}
+
+.flag-node.eliminated .team-name {
+  opacity: 0.55;
+}
+
+.flag-node.lvl-0 img { width: 32px; height: 32px; }
+.flag-node.lvl-1 img { width: 30px; height: 30px; }
+.flag-node.lvl-2 img { width: 27px; height: 27px; }
+.flag-node.lvl-3 img { width: 24px; height: 24px; }
+.flag-node.lvl-4 img { width: 21px; height: 21px; }
+
+.flag-node .placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 1.5px dashed rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.03);
+  animation: pending-pulse 2.2s ease-in-out infinite alternate;
+}
+
+.team-name {
+  font-size: 8px;
+  color: #c7cede;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px #000;
+}
+
+.trophy-btn {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 16%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  isolation: isolate;
+  transition: transform 0.15s ease;
+}
+
+.trophy-btn::before,
+.trophy-btn::after {
+  content: "";
+  position: absolute;
+  inset: -38%;
+  z-index: -1;
+  pointer-events: none;
+  mix-blend-mode: lighten;
+  background-repeat: no-repeat, no-repeat, no-repeat, no-repeat, no-repeat;
+  background-image:
+    radial-gradient(circle, rgba(255, 210, 59, 0.9), transparent 65%),
+    radial-gradient(circle, rgba(255, 45, 45, 0.85), transparent 65%),
+    radial-gradient(circle, rgba(190, 45, 255, 0.85), transparent 65%),
+    radial-gradient(circle, rgba(45, 140, 255, 0.85), transparent 65%),
+    radial-gradient(circle, rgba(45, 255, 140, 0.8), transparent 65%);
+  background-size: 62% 62%, 55% 55%, 55% 55%, 55% 55%, 65% 65%;
+  animation:
+    blob-shape 9s ease-in-out infinite,
+    blob-spin 16s linear infinite,
+    blob-drift 13s ease-in-out infinite;
+}
+
+.trophy-btn::after {
+  inset: -26%;
+  opacity: 0.75;
+  animation:
+    blob-shape 12s ease-in-out infinite reverse,
+    blob-spin 21s linear infinite reverse,
+    blob-drift 17s ease-in-out infinite reverse;
+}
+
+.trophy-btn.spinning::before {
+  animation:
+    blob-shape 9s ease-in-out infinite,
+    blob-drift 13s ease-in-out infinite,
+    blob-burst 1.8s ease-out forwards;
+}
+
+.trophy-btn.spinning::after {
+  animation:
+    blob-shape 12s ease-in-out infinite reverse,
+    blob-drift 17s ease-in-out infinite reverse,
+    blob-burst 1.8s ease-out forwards reverse;
+}
+
+.trophy-btn:hover {
+  transform: translate(-50%, -50%) scale(1.08);
+}
+
+.trophy-btn:active {
+  transform: translate(-50%, -50%) scale(0.96);
+}
+
+.trophy-icon {
+  width: 74%;
+  height: 74%;
+  display: block;
+  background: #f7f7f2;
+  border-radius: 16%;
+  padding: 9%;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+@keyframes blob-shape {
+  0%   { border-radius: 42% 58% 63% 37% / 41% 44% 56% 59%; }
+  33%  { border-radius: 63% 37% 43% 57% / 57% 68% 32% 43%; }
+  66%  { border-radius: 37% 63% 56% 44% / 49% 35% 65% 51%; }
+  100% { border-radius: 42% 58% 63% 37% / 41% 44% 56% 59%; }
+}
+
+@keyframes blob-spin {
+  0%   { transform: rotate(0deg) scale(1); filter: blur(3px) hue-rotate(0deg); opacity: 0.85; }
+  50%  { transform: rotate(180deg) scale(1.22); filter: blur(4px) hue-rotate(180deg); opacity: 1; }
+  100% { transform: rotate(360deg) scale(1); filter: blur(3px) hue-rotate(360deg); opacity: 0.85; }
+}
+
+@keyframes blob-drift {
+  0%   { background-position: 22% 28%, 74% 22%, 78% 68%, 24% 76%, 50% 48%; }
+  25%  { background-position: 32% 20%, 68% 34%, 68% 78%, 30% 64%, 44% 56%; }
+  50%  { background-position: 26% 36%, 78% 30%, 60% 70%, 20% 68%, 56% 44%; }
+  75%  { background-position: 18% 24%, 70% 40%, 72% 60%, 32% 78%, 48% 52%; }
+  100% { background-position: 22% 28%, 74% 22%, 78% 68%, 24% 76%, 50% 48%; }
+}
+
+@keyframes blob-burst {
+  0%   { transform: rotate(0deg) scale(1); filter: blur(3px) hue-rotate(0deg); opacity: 0.85; animation-timing-function: ease-out; }
+  20%  { transform: rotate(120deg) scale(2.3); filter: blur(5px) hue-rotate(130deg); opacity: 1; animation-timing-function: ease-in-out; }
+  45%  { transform: rotate(230deg) scale(2.05); filter: blur(4.5px) hue-rotate(250deg); opacity: 1; animation-timing-function: ease-in-out; }
+  100% { transform: rotate(360deg) scale(1); filter: blur(3px) hue-rotate(360deg); opacity: 0.85; }
+}
+
+.champion-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: clamp(14px, 2vw, 18px);
+  font-weight: 600;
+  color: #ffd700;
+  text-shadow: 0 1px 3px #000;
+  white-space: nowrap;
+  min-height: 24px;
+}
+
+.champion-label img {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 1px rgba(255, 215, 0, 0.6);
+}
+
+.footnote {
+  max-width: 560px;
+  text-align: center;
+  font-size: 12px;
+  color: #6b7386;
+  margin: 0;
+}
+
+.footnote a {
+  color: #9aa4b8;
+}
+
+.footnote a:hover {
+  color: #ffd700;
+}
+
+.scroll-hint {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #545b6b;
+  animation: hint-bob 2s ease-in-out infinite;
+}
+
+@keyframes hint-bob {
+  0%, 100% { transform: translateY(0); opacity: 0.6; }
+  50%      { transform: translateY(5px); opacity: 1; }
+}
+
+.rank-chart {
+  position: relative;
+  width: min(92vw, 760px);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 0 30px;
+}
+
+.rank-axis {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.rank-axis-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  transform: translateX(-50%);
+}
+
+.rank-axis-tick .rank-axis-line {
+  position: absolute;
+  top: 0;
+  bottom: 18px;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.rank-axis-tick .rank-axis-label {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 10px;
+  color: #545b6b;
+  white-space: nowrap;
+}
+
+.rank-row {
+  position: relative;
+  height: 56px;
+}
+
+.rank-row .rank-line {
+  position: absolute;
+  top: 100%;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.16);
+  transform: translateY(-50%) scaleX(0);
+  transform-origin: left;
+  animation: rank-line-grow 0.7s ease-out forwards;
+  animation-delay: var(--delay, 0s);
+}
+
+@keyframes rank-line-grow {
+  to { transform: translateY(-50%) scaleX(1); }
+}
+
+.rank-flag {
+  position: absolute;
+  top: 100%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  opacity: 0;
+  animation: node-fade 0.5s ease-out forwards;
+  animation-delay: calc(var(--delay, 0s) + 0.3s);
+}
+
+.rank-flag img {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #111;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25), 0 0 10px rgba(0, 0, 0, 0.6);
+}
+
+/* The label's box is sized by .rank-name alone (.rank-position is taken out
+   of flow), so centering .rank-label centers the country name on the flag
+   without the rank suffix's width skewing it either way. */
+.rank-flag .rank-label {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+}
+
+.rank-flag.label-above .rank-label {
+  bottom: 100%;
+  margin-bottom: 6px;
+}
+
+/* When two flags in a row are close together, keep both labels at the same
+   height but slide them apart horizontally instead of centering each one on
+   its own flag, so the two names don't overlap. */
+.rank-flag.shift-left .rank-label {
+  transform: translateX(calc(-100% - 4px));
+}
+
+.rank-flag.shift-right .rank-label {
+  transform: translateX(4px);
+}
+
+.rank-flag .rank-name {
+  display: block;
+  font-weight: 600;
+  color: #ffd23b;
+  white-space: nowrap;
+}
+
+.rank-flag .rank-position {
+  position: absolute;
+  top: 0;
+  left: 100%;
+  margin-left: 4px;
+  color: #8b93a3;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.rank-flag.side-right .rank-position {
+  left: auto;
+  right: 100%;
+  margin-left: 0;
+  margin-right: 4px;
+}
+
+.rank-empty {
+  color: #6b7386;
+  font-size: 13px;
+  text-align: center;
+}

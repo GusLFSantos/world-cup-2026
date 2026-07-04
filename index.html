@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>World Cup 2026 — Circular Bracket</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <section class="section section-standings">
+    <header class="page-header">
+      <h1>FIFA World Cup 2026</h1>
+      <p id="status" class="status">Loading standings&hellip;</p>
+    </header>
+
+    <main class="stage" id="stage">
+      <svg id="bracket-svg" viewBox="0 0 100 100" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="rgbGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%"   stop-color="#ff3b3b"/>
+            <stop offset="25%"  stop-color="#ffd23b"/>
+            <stop offset="50%"  stop-color="#3bff8f"/>
+            <stop offset="75%"  stop-color="#3b9bff"/>
+            <stop offset="100%" stop-color="#c93bff"/>
+          </linearGradient>
+        </defs>
+        <g id="rings-group"></g>
+        <g id="lines-group"></g>
+      </svg>
+
+      <div id="nodes" class="nodes"></div>
+
+      <button id="trophy-btn" class="trophy-btn" type="button" title="Click to download the latest results" aria-label="Download the latest results">
+        <img src="https://upload.wikimedia.org/wikipedia/commons/1/17/2026_FIFA_World_Cup_emblem.svg" alt="2026 FIFA World Cup emblem" class="trophy-icon">
+      </button>
+    </main>
+
+    <div id="champion-label" class="champion-label"></div>
+
+    <p class="footnote">Live results downloaded from <a href="https://github.com/openfootball/worldcup.json/blob/master/2026/worldcup.json" target="_blank" rel="noopener">openfootball/worldcup.json</a>. Dashed lines mark matches still to be played — click the trophy to download the latest data.</p>
+
+    <p class="scroll-hint">Scroll for the next matches ↓</p>
+  </section>
+
+  <section class="section section-next-matches">
+    <header class="page-header">
+      <h2>Next Matches</h2>
+      <p class="status">Positioned by FIFA World Ranking — closer to the left is a better ranking</p>
+    </header>
+
+    <div class="rank-chart" id="rank-chart"></div>
+
+    <p class="footnote">Rankings from the <a href="https://en.wikipedia.org/wiki/FIFA_World_Rankings" target="_blank" rel="noopener">FIFA Men's World Ranking</a>, 11 June 2026.</p>
+  </section>
+
+  <script src="script.js"></script>
+</body>
+</html>
