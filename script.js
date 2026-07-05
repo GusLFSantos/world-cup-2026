@@ -6,7 +6,7 @@
   const ROUND_NAMES = ["round32", "round16", "quarter", "semi", "final"];
   const FLAG_BASE = "https://flagcdn.com/w320/";
   const FLAG_2X = "https://flagcdn.com/w640/";
-  const STORAGE_KEY = "wc2026-last-valid-standings-v3";
+  const STORAGE_KEY = "wc2026-last-valid-standings-v4";
   const OPENFOOTBALL_URL =
     "https://raw.githubusercontent.com/openfootball/worldcup.json/master/2026/worldcup.json";
 
@@ -39,6 +39,9 @@
     104: [101, 102],
   };
   const FINAL_MATCH_NUM = 104;
+  // Round of 32 leaf match numbers — Round of 16 through the Final are
+  // resolved recursively from these via BRACKET_TOPOLOGY.
+  const ROUND32_NUMS = Array.from({ length: 16 }, (_, i) => 73 + i);
 
   // FIFA Men's World Ranking, 11 June 2026 (Wikipedia / whereig.com — see the
   // "Next Matches" section footnote for the source link).
@@ -104,15 +107,16 @@
       semi: [null, null],
       final: [null],
     },
-    // Round of 16 matchups already set (both opponents decided) as of this snapshot.
-    nextMatches: [
-      { team1: { name: "Paraguay", code: "py" }, team2: { name: "France", code: "fr" } },
-      { team1: { name: "Canada", code: "ca" }, team2: { name: "Morocco", code: "ma" } },
-      { team1: { name: "Brazil", code: "br" }, team2: { name: "Norway", code: "no" } },
-      { team1: { name: "Mexico", code: "mx" }, team2: { name: "England", code: "gb-eng" } },
-      { team1: { name: "Portugal", code: "pt" }, team2: { name: "Spain", code: "es" } },
-      { team1: { name: "USA", code: "us" }, team2: { name: "Belgium", code: "be" } },
-      { team1: { name: "Argentina", code: "ar" }, team2: { name: "Egypt", code: "eg" } },
+    // Round of 16 matchups already set (both opponents decided) as of this
+    // snapshot; none played yet, so every entry has loser: null.
+    knockoutMatches: [
+      { date: "2026-07-04", team1: { name: "Paraguay", code: "py" }, team2: { name: "France", code: "fr" }, loser: null },
+      { date: "2026-07-04", team1: { name: "Canada", code: "ca" }, team2: { name: "Morocco", code: "ma" }, loser: null },
+      { date: "2026-07-05", team1: { name: "Brazil", code: "br" }, team2: { name: "Norway", code: "no" }, loser: null },
+      { date: "2026-07-05", team1: { name: "Mexico", code: "mx" }, team2: { name: "England", code: "gb-eng" }, loser: null },
+      { date: "2026-07-06", team1: { name: "Portugal", code: "pt" }, team2: { name: "Spain", code: "es" }, loser: null },
+      { date: "2026-07-06", team1: { name: "USA", code: "us" }, team2: { name: "Belgium", code: "be" }, loser: null },
+      { date: "2026-07-07", team1: { name: "Argentina", code: "ar" }, team2: { name: "Egypt", code: "eg" }, loser: null },
     ],
     // Built-in snapshot has no live match schedule to check "today" against.
     todayMatches: [],
@@ -314,26 +318,45 @@
       return side === 0 ? winnerOf(a) : winnerOf(b);
     }
 
-    // Upcoming matches whose two opponents are already decided (even if the
-    // file itself still shows a placeholder like "W86"), sorted by date.
-    const nextMatches = Object.keys(BRACKET_TOPOLOGY)
-      .map(Number)
-      .filter((num) => winnerSide(num) === null)
-      .map((num) => {
-        const [a, b] = BRACKET_TOPOLOGY[num];
-        const team1Name = winnerOf(a);
-        const team2Name = winnerOf(b);
-        if (!team1Name || !team2Name) return null;
+    // Both teams entering match `num` — resolved recursively through
+    // BRACKET_TOPOLOGY for Round of 16 and later, read directly off the file
+    // for Round of 32 leaves.
+    function matchupOf(num) {
+      if (!BRACKET_TOPOLOGY[num]) {
         const m = byNum.get(num);
+        return m ? [m.team1, m.team2] : [null, null];
+      }
+      const [a, b] = BRACKET_TOPOLOGY[num];
+      return [winnerOf(a), winnerOf(b)];
+    }
+
+    // Every knockout-stage match (Round of 32 through Final) whose two
+    // opponents are already known, whether the match itself has been played
+    // yet or not (even if the file itself still shows a placeholder like
+    // "W86" for team1/team2). Past matches carry the loser's name so the
+    // chart can grey that flag out; future ones carry loser: null. Sorted
+    // with the furthest-out dates first and, within the same date, earliest
+    // kickoff first.
+    const knockoutMatches = [...ROUND32_NUMS, ...Object.keys(BRACKET_TOPOLOGY).map(Number)]
+      .map((num) => {
+        const m = byNum.get(num);
+        if (!m) return null;
+        const [team1Name, team2Name] = matchupOf(num);
+        if (!team1Name || !team2Name) return null;
+        const side = winnerSide(num);
+        const loserName = side === null ? null : side === 0 ? team2Name : team1Name;
+        const kickoff = matchKickoffUTC(m.date, m.time);
         return {
           round: m.round,
           date: m.date,
+          kickoffMs: kickoff ? kickoff.getTime() : 0,
           team1: { name: team1Name, code: countryCode(team1Name) },
           team2: { name: team2Name, code: countryCode(team2Name) },
+          loser: loserName,
         };
       })
       .filter(Boolean)
-      .sort((x, y) => (x.date < y.date ? -1 : x.date > y.date ? 1 : 0));
+      .sort((x, y) => (x.date !== y.date ? (x.date < y.date ? 1 : -1) : x.kickoffMs - y.kickoffMs));
 
     const [sf1, sf2] = BRACKET_TOPOLOGY[FINAL_MATCH_NUM];
     // sf2 (Brazil's side of the draw) first so it lands on the right of the
@@ -369,7 +392,7 @@
         semi: semiNums.map(winnerSide),
         final: [winnerSide(FINAL_MATCH_NUM)],
       },
-      nextMatches,
+      knockoutMatches,
       todayMatches: computeTodayMatches(json.matches),
     };
   }
@@ -484,76 +507,109 @@
     return axis;
   }
 
-  // Renders each upcoming match as a row: a line spanning the two teams'
-  // FIFA ranking positions on a shared axis, with round flags at each end.
-  function renderNextMatches(matches) {
+  // Interprets a "YYYY-MM-DD" string as a plain calendar date (not shifted by
+  // the viewer's own timezone) and formats it for a section header.
+  function formatMatchDate(dateStr) {
+    const [y, mo, d] = dateStr.split("-").map(Number);
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: "UTC",
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    }).format(new Date(Date.UTC(y, mo - 1, d)));
+  }
+
+  // Renders every knockout-stage match as a row: a line spanning the two
+  // teams' FIFA ranking positions on a shared axis, with round flags at each
+  // end. Rows are grouped under a header for each date; matches arrive
+  // pre-sorted with the furthest-out dates first, so groups render in that
+  // same order and already-played dates sink toward the bottom. A match
+  // that's already been decided greys out the loser's flag.
+  function renderKnockoutMatches(matches) {
     rankChartEl.innerHTML = "";
 
     if (!matches || matches.length === 0) {
       const empty = document.createElement("p");
       empty.className = "rank-empty";
-      empty.textContent = "No upcoming matches with confirmed opponents yet.";
+      empty.textContent = "No matches with confirmed opponents yet.";
       rankChartEl.appendChild(empty);
       return;
     }
 
     rankChartEl.appendChild(renderRankAxis());
 
-    matches.forEach((match, i) => {
-      const rank1 = FIFA_RANKING[match.team1.name] || RANK_DOMAIN[1];
-      const rank2 = FIFA_RANKING[match.team2.name] || RANK_DOMAIN[1];
-      const x1 = rankPercent(rank1);
-      const x2 = rankPercent(rank2);
-      const tooClose = Math.abs(x2 - x1) < LABEL_COLLISION_GAP;
-      const delay = `${i * 0.12}s`;
+    const dateGroups = new Map();
+    matches.forEach((match) => {
+      if (!dateGroups.has(match.date)) dateGroups.set(match.date, []);
+      dateGroups.get(match.date).push(match);
+    });
 
-      const row = document.createElement("div");
-      row.className = "rank-row";
+    let i = 0;
+    dateGroups.forEach((dayMatches, date) => {
+      const header = document.createElement("p");
+      header.className = "match-date-header";
+      header.textContent = formatMatchDate(date);
+      rankChartEl.appendChild(header);
 
-      const line = document.createElement("div");
-      line.className = "rank-line";
-      line.style.left = `${Math.min(x1, x2)}%`;
-      line.style.width = `${Math.abs(x2 - x1)}%`;
-      line.style.setProperty("--delay", delay);
-      row.appendChild(line);
+      dayMatches.forEach((match) => {
+        const rank1 = FIFA_RANKING[match.team1.name] || RANK_DOMAIN[1];
+        const rank2 = FIFA_RANKING[match.team2.name] || RANK_DOMAIN[1];
+        const x1 = rankPercent(rank1);
+        const x2 = rankPercent(rank2);
+        const tooClose = Math.abs(x2 - x1) < LABEL_COLLISION_GAP;
+        const delay = `${i * 0.12}s`;
+        i++;
 
-      const leftmostIsTeam1 = x1 <= x2;
+        const row = document.createElement("div");
+        row.className = "rank-row";
 
-      [
-        { team: match.team1, rank: rank1, x: x1, leftmost: leftmostIsTeam1 },
-        { team: match.team2, rank: rank2, x: x2, leftmost: !leftmostIsTeam1 },
-      ].forEach(({ team, rank, x, leftmost }) => {
-        // When the two teams are close together, spread their labels apart
-        // horizontally at the same height instead of centering each one on
-        // its own flag — otherwise the names would overlap.
-        const shiftClass = tooClose ? (leftmost ? " shift-left" : " shift-right") : "";
-        const flag = document.createElement("div");
-        flag.className = `rank-flag label-above${shiftClass}${x > 50 ? " side-right" : ""}`;
-        flag.style.left = `${x}%`;
-        flag.style.setProperty("--delay", delay);
-        flag.title = `${team.name} — ${ordinal(rank)}`;
+        const line = document.createElement("div");
+        line.className = "rank-line";
+        line.style.left = `${Math.min(x1, x2)}%`;
+        line.style.width = `${Math.abs(x2 - x1)}%`;
+        line.style.setProperty("--delay", delay);
+        row.appendChild(line);
 
-        const label = document.createElement("span");
-        label.className = "rank-label";
-        const name = document.createElement("span");
-        name.className = "rank-name";
-        name.textContent = team.name;
-        const pos = document.createElement("span");
-        pos.className = "rank-position";
-        pos.textContent = ordinal(rank);
-        label.append(name, pos);
+        const leftmostIsTeam1 = x1 <= x2;
 
-        const img = document.createElement("img");
-        img.src = flagUrl(team.code, false);
-        img.srcset = `${flagUrl(team.code, true)} 2x`;
-        img.alt = team.name;
-        img.loading = "lazy";
+        [
+          { team: match.team1, rank: rank1, x: x1, leftmost: leftmostIsTeam1 },
+          { team: match.team2, rank: rank2, x: x2, leftmost: !leftmostIsTeam1 },
+        ].forEach(({ team, rank, x, leftmost }) => {
+          // When the two teams are close together, spread their labels apart
+          // horizontally at the same height instead of centering each one on
+          // its own flag — otherwise the names would overlap.
+          const shiftClass = tooClose ? (leftmost ? " shift-left" : " shift-right") : "";
+          const isLoser = match.loser !== null && team.name === match.loser;
+          const flag = document.createElement("div");
+          flag.className =
+            `rank-flag label-above${shiftClass}${isLoser ? " eliminated" : ""}${x > 50 ? " side-right" : ""}`;
+          flag.style.left = `${x}%`;
+          flag.style.setProperty("--delay", delay);
+          flag.title = `${team.name} — ${ordinal(rank)}` + (isLoser ? " (lost)" : "");
 
-        flag.append(label, img);
-        row.appendChild(flag);
+          const label = document.createElement("span");
+          label.className = "rank-label";
+          const name = document.createElement("span");
+          name.className = "rank-name";
+          name.textContent = team.name;
+          const pos = document.createElement("span");
+          pos.className = "rank-position";
+          pos.textContent = ordinal(rank);
+          label.append(name, pos);
+
+          const img = document.createElement("img");
+          img.src = flagUrl(team.code, false);
+          img.srcset = `${flagUrl(team.code, true)} 2x`;
+          img.alt = team.name;
+          img.loading = "lazy";
+
+          flag.append(label, img);
+          row.appendChild(flag);
+        });
+
+        rankChartEl.appendChild(row);
       });
-
-      rankChartEl.appendChild(row);
     });
   }
 
@@ -625,7 +681,7 @@
     const bracket = buildBracket(data.teams, data.results);
     render(bracket);
     setStatus(statusText);
-    renderNextMatches(data.nextMatches);
+    renderKnockoutMatches(data.knockoutMatches);
     renderTodayMatches(data.todayMatches);
   }
 

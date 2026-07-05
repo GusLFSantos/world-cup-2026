@@ -512,6 +512,17 @@ body::before {
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.25), 0 0 10px rgba(0, 0, 0, 0.6);
 }
 
+/* A match already decided greys out the team that lost, same treatment as
+   eliminated flags in the bracket above. */
+.rank-flag.eliminated img {
+  filter: grayscale(1) brightness(0.55);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.12);
+}
+
+.rank-flag.eliminated .rank-name {
+  opacity: 0.55;
+}
+
 /* The label's box is sized by .rank-name alone (.rank-position is taken out
    of flow), so centering .rank-label centers the country name on the flag
    without the rank suffix's width skewing it either way. */
@@ -566,4 +577,18 @@ body::before {
   color: #6b7386;
   font-size: 13px;
   text-align: center;
+}
+
+.match-date-header {
+  margin: 18px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #8b93a3;
+  text-align: center;
+}
+
+.match-date-header:first-of-type {
+  margin-top: 0;
 }
