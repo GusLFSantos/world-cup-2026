@@ -484,29 +484,6 @@
   // instead of shifting either dot.
   const LABEL_COLLISION_GAP = 14;
 
-  const RANK_AXIS_TICKS = [1, 10, 20, 30, 40];
-
-  function renderRankAxis() {
-    const axis = document.createElement("div");
-    axis.className = "rank-axis";
-    RANK_AXIS_TICKS.forEach((rank) => {
-      const tick = document.createElement("div");
-      tick.className = "rank-axis-tick";
-      tick.style.left = `${rankPercent(rank)}%`;
-
-      const line = document.createElement("div");
-      line.className = "rank-axis-line";
-
-      const label = document.createElement("span");
-      label.className = "rank-axis-label";
-      label.textContent = `#${rank}`;
-
-      tick.append(line, label);
-      axis.appendChild(tick);
-    });
-    return axis;
-  }
-
   // Interprets a "YYYY-MM-DD" string as a plain calendar date (not shifted by
   // the viewer's own timezone) and formats it for a section header.
   function formatMatchDate(dateStr) {
@@ -519,12 +496,74 @@
     }).format(new Date(Date.UTC(y, mo - 1, d)));
   }
 
-  // Renders every knockout-stage match as a row: a line spanning the two
-  // teams' FIFA ranking positions on a shared axis, with round flags at each
-  // end. Rows are grouped under a header for each date; matches arrive
-  // pre-sorted with the furthest-out dates first, so groups render in that
-  // same order and already-played dates sink toward the bottom. A match
-  // that's already been decided greys out the loser's flag.
+  // Builds a single match row: a line spanning the two teams' FIFA ranking
+  // positions on a shared axis, with round flags at each end. A match that's
+  // already been decided greys out the loser's flag.
+  function buildMatchRow(match, delay) {
+    const rank1 = FIFA_RANKING[match.team1.name] || RANK_DOMAIN[1];
+    const rank2 = FIFA_RANKING[match.team2.name] || RANK_DOMAIN[1];
+    const x1 = rankPercent(rank1);
+    const x2 = rankPercent(rank2);
+    const tooClose = Math.abs(x2 - x1) < LABEL_COLLISION_GAP;
+
+    const row = document.createElement("div");
+    row.className = "rank-row";
+
+    const line = document.createElement("div");
+    line.className = "rank-line";
+    line.style.left = `${Math.min(x1, x2)}%`;
+    line.style.width = `${Math.abs(x2 - x1)}%`;
+    line.style.setProperty("--delay", delay);
+    row.appendChild(line);
+
+    const leftmostIsTeam1 = x1 <= x2;
+
+    [
+      { team: match.team1, rank: rank1, x: x1, leftmost: leftmostIsTeam1 },
+      { team: match.team2, rank: rank2, x: x2, leftmost: !leftmostIsTeam1 },
+    ].forEach(({ team, rank, x, leftmost }) => {
+      // When the two teams are close together, spread their labels apart
+      // horizontally at the same height instead of centering each one on
+      // its own flag — otherwise the names would overlap.
+      const shiftClass = tooClose ? (leftmost ? " shift-left" : " shift-right") : "";
+      const isLoser = match.loser !== null && team.name === match.loser;
+      const flag = document.createElement("div");
+      flag.className =
+        `rank-flag label-above${shiftClass}${isLoser ? " eliminated" : ""}${x > 50 ? " side-right" : ""}`;
+      flag.style.left = `${x}%`;
+      flag.style.setProperty("--delay", delay);
+      flag.title = `${team.name} — ${ordinal(rank)}` + (isLoser ? " (lost)" : "");
+
+      const label = document.createElement("span");
+      label.className = "rank-label";
+      const name = document.createElement("span");
+      name.className = "rank-name";
+      name.textContent = team.name;
+      const pos = document.createElement("span");
+      pos.className = "rank-position";
+      pos.textContent = ordinal(rank);
+      label.append(name, pos);
+
+      const img = document.createElement("img");
+      img.src = flagUrl(team.code, false);
+      img.srcset = `${flagUrl(team.code, true)} 2x`;
+      img.alt = team.name;
+      img.loading = "lazy";
+
+      flag.append(label, img);
+      row.appendChild(flag);
+    });
+
+    return row;
+  }
+
+  // Renders every knockout-stage match as a row on a shared FIFA-ranking
+  // axis, grouped under a header for each date. Matches arrive pre-sorted
+  // with the furthest-out dates first. Dates that are still undecided (at
+  // least one match without a result) render normally; dates that are
+  // entirely in the past are bundled together under one single "Previous
+  // Matches" toggle, collapsed by default, so old results don't crowd out
+  // what's still ahead.
   function renderKnockoutMatches(matches) {
     rankChartEl.innerHTML = "";
 
@@ -536,81 +575,74 @@
       return;
     }
 
-    rankChartEl.appendChild(renderRankAxis());
-
     const dateGroups = new Map();
     matches.forEach((match) => {
       if (!dateGroups.has(match.date)) dateGroups.set(match.date, []);
       dateGroups.get(match.date).push(match);
     });
 
-    let i = 0;
+    const currentDates = [];
+    const pastDates = [];
     dateGroups.forEach((dayMatches, date) => {
+      (dayMatches.every((match) => match.loser !== null) ? pastDates : currentDates).push(date);
+    });
+
+    // Each section gets its own delay sequence starting back at 0, so the
+    // "Previous Matches" fade-in starts right away when it's expanded
+    // instead of picking up wherever the visible matches above left off
+    // (which, added up, could be a multi-second wait for the last rows).
+    function makeDelaySequence() {
+      let n = 0;
+      return () => `${n++ * 0.12}s`;
+    }
+
+    function appendDateBlock(date, target, nextDelay) {
       const header = document.createElement("p");
       header.className = "match-date-header";
       header.textContent = formatMatchDate(date);
-      rankChartEl.appendChild(header);
+      target.appendChild(header);
 
-      dayMatches.forEach((match) => {
-        const rank1 = FIFA_RANKING[match.team1.name] || RANK_DOMAIN[1];
-        const rank2 = FIFA_RANKING[match.team2.name] || RANK_DOMAIN[1];
-        const x1 = rankPercent(rank1);
-        const x2 = rankPercent(rank2);
-        const tooClose = Math.abs(x2 - x1) < LABEL_COLLISION_GAP;
-        const delay = `${i * 0.12}s`;
-        i++;
-
-        const row = document.createElement("div");
-        row.className = "rank-row";
-
-        const line = document.createElement("div");
-        line.className = "rank-line";
-        line.style.left = `${Math.min(x1, x2)}%`;
-        line.style.width = `${Math.abs(x2 - x1)}%`;
-        line.style.setProperty("--delay", delay);
-        row.appendChild(line);
-
-        const leftmostIsTeam1 = x1 <= x2;
-
-        [
-          { team: match.team1, rank: rank1, x: x1, leftmost: leftmostIsTeam1 },
-          { team: match.team2, rank: rank2, x: x2, leftmost: !leftmostIsTeam1 },
-        ].forEach(({ team, rank, x, leftmost }) => {
-          // When the two teams are close together, spread their labels apart
-          // horizontally at the same height instead of centering each one on
-          // its own flag — otherwise the names would overlap.
-          const shiftClass = tooClose ? (leftmost ? " shift-left" : " shift-right") : "";
-          const isLoser = match.loser !== null && team.name === match.loser;
-          const flag = document.createElement("div");
-          flag.className =
-            `rank-flag label-above${shiftClass}${isLoser ? " eliminated" : ""}${x > 50 ? " side-right" : ""}`;
-          flag.style.left = `${x}%`;
-          flag.style.setProperty("--delay", delay);
-          flag.title = `${team.name} — ${ordinal(rank)}` + (isLoser ? " (lost)" : "");
-
-          const label = document.createElement("span");
-          label.className = "rank-label";
-          const name = document.createElement("span");
-          name.className = "rank-name";
-          name.textContent = team.name;
-          const pos = document.createElement("span");
-          pos.className = "rank-position";
-          pos.textContent = ordinal(rank);
-          label.append(name, pos);
-
-          const img = document.createElement("img");
-          img.src = flagUrl(team.code, false);
-          img.srcset = `${flagUrl(team.code, true)} 2x`;
-          img.alt = team.name;
-          img.loading = "lazy";
-
-          flag.append(label, img);
-          row.appendChild(flag);
-        });
-
-        rankChartEl.appendChild(row);
+      dateGroups.get(date).forEach((match) => {
+        target.appendChild(buildMatchRow(match, nextDelay()));
       });
+    }
+
+    function appendDivider(target) {
+      const divider = document.createElement("div");
+      divider.className = "match-date-divider";
+      target.appendChild(divider);
+    }
+
+    const currentDelay = makeDelaySequence();
+    currentDates.forEach((date, idx) => {
+      if (idx > 0) appendDivider(rankChartEl);
+      appendDateBlock(date, rankChartEl, currentDelay);
     });
+
+    if (pastDates.length > 0) {
+      if (currentDates.length > 0) appendDivider(rankChartEl);
+
+      const pastGroup = document.createElement("div");
+      pastGroup.className = "past-matches-group collapsed";
+
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "past-matches-toggle";
+      toggle.textContent = `Previous Matches (${pastDates.length} day${pastDates.length === 1 ? "" : "s"})`;
+      toggle.addEventListener("click", () => pastGroup.classList.toggle("collapsed"));
+      pastGroup.appendChild(toggle);
+
+      const pastBody = document.createElement("div");
+      pastBody.className = "past-matches-body";
+      const pastDelay = makeDelaySequence();
+      pastDates.forEach((date, idx) => {
+        if (idx > 0) appendDivider(pastBody);
+        appendDateBlock(date, pastBody, pastDelay);
+      });
+      pastGroup.appendChild(pastBody);
+
+      rankChartEl.appendChild(pastGroup);
+    }
   }
 
   // Renders the day's fixtures as a row of side-by-side cards — each with
